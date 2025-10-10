@@ -1,1 +1,7 @@
-# Segmentation-fault
+# Team: Segmentation Fault
+
+## Team Members
+- Tanmay Nikhare  
+- Pratik Nikam  
+- Mihir Patel  
+- Paresh Morankar
