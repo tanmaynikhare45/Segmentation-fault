@@ -81,7 +81,9 @@
                 <input type="hidden" name="role" value="{{ role or 'user' }}">
                 
                 <div class="auth-footer">
+                    {% if role != 'admin' %}
                     <p>Don't have an account? <a href="{{ url_for('signup_page_role', role=role or 'user') }}">Create Account</a></p>
+                    {% endif %}
                     <a href="{{ url_for('login_role_selection') }}" class="back-link">
                         <i class="fas fa-arrow-left"></i>
                         Change Role

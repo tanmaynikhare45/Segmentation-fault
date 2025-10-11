@@ -31,12 +31,12 @@
                     <span>Civic Eye</span>
                 </div>
                 {% if role == 'admin' %}
-                    <h2>Create Admin Account</h2>
-                    <p>Register to manage the Civic Eye platform</p>
+                    <h2>Admin account creation is disabled</h2>
+                    <p>Please contact an existing admin to get access.</p>
                     <div class="role-info" style="background: #ffe6e6; padding: 10px; border-radius: 8px; margin-top: 10px;">
                         <small style="color: #c0392b;">
-                            <i class="fas fa-shield-alt"></i> 
-                            <strong>Admin Access:</strong> You'll have full control over users, complaints, and system management.
+                            <i class="fas fa-shield-alt"></i>
+                            Admin accounts cannot be created from this page.
                         </small>
                     </div>
                 {% else %}
@@ -64,6 +64,7 @@
                 {% endif %}
             {% endwith %}
             
+            {% if role != 'admin' %}
             <form action="{{ url_for('signup') }}" method="post" class="auth-form">
                 <div class="form-group">
                     <div class="input-wrapper">
@@ -108,6 +109,14 @@
                     </a>
                 </div>
             </form>
+            {% else %}
+            <div class="auth-footer">
+                <a href="{{ url_for('login_page_role', role='admin') }}" class="back-link">
+                    <i class="fas fa-arrow-left"></i>
+                    Back to Admin Login
+                </a>
+            </div>
+            {% endif %}
         </div>
     </div>
 </body>
