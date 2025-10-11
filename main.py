@@ -10,10 +10,14 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=port, debug=True)
     
 
+# In Python console or add to signup
+from storage.db import CivicDB
+db = CivicDB()
+db.create_user("authority1", "auth@civic.com", "password", "Authority User", "authority")
 
 
 
 
 
 
-    
+   

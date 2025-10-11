@@ -83,7 +83,7 @@ class CivicDB:
             logging.getLogger(__name__).exception("Password verification failed")
             return False
     
-    def create_user(self, username: str, email: str, password: str, name: str) -> bool:
+    def create_user(self, username: str, email: str, password: str, name: str, role: str = "citizen") -> bool:
         """Create a new user"""
         if self.db is None:
             logging.getLogger(__name__).error("Cannot create user: DB not connected")
@@ -96,7 +96,7 @@ class CivicDB:
                 "email": email,
                 "password": pwd_context.hash(password),
                 "name": name,
-                "role": "citizen",
+                "role": role,
                 "created_at": datetime.utcnow()
             }
             result = self.db.users.insert_one(user)
@@ -111,7 +111,7 @@ class CivicDB:
             logging.getLogger(__name__).error("Cannot save report: DB not connected")
             return False
         try:
-            result = self.db.reports.insert_one({
+            doc = {
                 "report_id": record.report_id,
                 "created_at": record.created_at,
                 "issue_type": record.issue_type,
@@ -123,22 +123,35 @@ class CivicDB:
                 "status": record.status,
                 "fake": record.fake,
                 "fake_score": record.fake_score
-            })
-            return bool(result.inserted_id)
+            }
+            logging.getLogger(__name__).info(f"Saving report with ID: {record.report_id}")
+            result = self.db.reports.insert_one(doc)
+            success = bool(result.inserted_id)
+            logging.getLogger(__name__).info(f"Report saved successfully: {success}")
+            return success
         except Exception:
             logging.getLogger(__name__).exception("Error saving report")
             return False
     
     def get_report(self, report_id: str) -> Optional[ReportRecord]:
-        """Get a report by ID"""
+        """Get a report by ID (case-insensitive)"""
         if self.db is None:
+            logging.getLogger(__name__).error("Cannot get report: DB not connected")
             return None
         try:
+            # Make search case-insensitive
+            report_id = report_id.strip().lower()
+            logging.getLogger(__name__).info(f"Searching for report ID: {report_id}")
             doc = self.db.reports.find_one({"report_id": report_id})
             if not doc:
+                logging.getLogger(__name__).warning(f"Report not found: {report_id}")
+                # Debug: check what reports exist
+                count = self.db.reports.count_documents({})
+                logging.getLogger(__name__).info(f"Total reports in DB: {count}")
                 return None
             # Drop Mongo's internal _id before constructing dataclass
             doc.pop("_id", None)
+            logging.getLogger(__name__).info(f"Report found: {report_id}")
             return ReportRecord(**doc)
         except Exception:
             logging.getLogger(__name__).exception("Error getting report")

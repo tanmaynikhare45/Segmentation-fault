@@ -98,16 +98,16 @@ class ImageIssueClassifier:
 
         root = Path(__file__).resolve().parents[1]  # Hakathon/
         candidates = [
+            root / "best.pt",
             root / "ai" / "models" / "best.pt",
             root / "models" / "best.pt",
             root / "static" / "models" / "best.pt",
-            root / "best.pt",
         ]
         for p in candidates:
             if p.exists():
                 return str(p)
-        # Default location under ai/models/best.pt
-        return str(root / "ai" / "models" / "best.pt")
+        # Default location under Hakathon/best.pt
+        return str(root / "best.pt")
 
     def _initialize_yolo(self):
         """Initialize YOLO from local best.pt. No external services used."""
@@ -166,64 +166,18 @@ class ImageIssueClassifier:
         Returns:
             Classified issue type or None if classification fails
         """
-        # Use YOLO only
-        if self.yolo_model is not None:
-            info = self.classify_with_preview(image_path)
-            return info.get("issue_type") if info else None
-        logger.warning("YOLO model not available; cannot classify")
-        return None
-            
         # Validate image path
         if not os.path.exists(image_path):
             logger.error(f"Image file not found: {image_path}")
             return None
+            
+        # Use YOLO only
+        if self.yolo_model is not None:
+            info = self.classify_with_preview(image_path)
+            return info.get("issue_type") if info else None
         
-        try:
-            from PIL import Image
-            
-            # Load and preprocess image
-            logger.debug(f"Processing image: {image_path}")
-            image = Image.open(image_path)
-            
-            # Convert to RGB if necessary
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
-            # Get predictions from model
-            results = self.pipeline(image)
-            
-            if not results:
-                logger.warning("No classification results returned")
-                return None
-            
-            # Process results (usually sorted by confidence)
-            logger.debug(f"Classification results: {results}")
-            
-            # Try to map each result until we find a match
-            for result in results:
-                label = result.get("label", "")
-                confidence = result.get("score", 0.0)
-                
-                logger.debug(f"Checking label: '{label}' with confidence: {confidence}")
-                
-                # Only consider predictions with reasonable confidence
-                if confidence < 0.1:  # 10% minimum confidence
-                    continue
-                
-                mapped_issue = self._map_label_to_issue(label)
-                if mapped_issue:
-                    logger.info(f"Image classified as '{mapped_issue}' (confidence: {confidence:.3f})")
-                    return mapped_issue
-            
-            logger.info("No civic issue detected in image")
-            return None
-            
-        except ImportError:
-            logger.error("PIL not available for image processing")
-            return None
-        except Exception as e:
-            logger.error(f"Error classifying image {image_path}: {e}")
-            return None
+        logger.warning("YOLO model not available; cannot classify")
+        return None
 
     def classify_with_preview(self, image_path: str) -> Optional[Dict[str, str]]:
         """

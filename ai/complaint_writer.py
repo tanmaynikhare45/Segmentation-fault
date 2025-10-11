@@ -1,6 +1,9 @@
 import logging
 from typing import Dict, Optional
 from datetime import datetime
+import os
+from groq import Groq
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -90,8 +93,71 @@ class ComplaintWriter:
         "unknown": "Municipal Administration"
     }
     
-    def __init__(self):
-        logger.info("ComplaintWriter initialized")
+    def __init__(self, api_key: Optional[str] = None):
+        self.groq_client = None
+        api_key = api_key or os.getenv('GROQ_API_KEY')
+        if api_key:
+            try:
+                self.groq_client = Groq(api_key=api_key)
+                logger.info("ComplaintWriter initialized with Groq AI")
+            except Exception as e:
+                logger.error(f"Failed to initialize Groq: {e}")
+        else:
+            logger.info("ComplaintWriter initialized in template mode")
+    
+    def _get_location_name(self, lat: float, lng: float) -> str:
+        """
+        Get location name from coordinates using reverse geocoding.
+        
+        Args:
+            lat: Latitude
+            lng: Longitude
+            
+        Returns:
+            Location name or coordinates as fallback
+        """
+        try:
+            # Use OpenStreetMap Nominatim API (free)
+            url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lng}&zoom=18&addressdetails=1"
+            headers = {'User-Agent': 'CivicEye/1.0'}
+            
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Extract meaningful address components
+                address = data.get('address', {})
+                
+                # Build location string from available components
+                parts = []
+                
+                # Add road/street
+                if address.get('road'):
+                    parts.append(address['road'])
+                
+                # Add area/suburb
+                if address.get('suburb') or address.get('neighbourhood'):
+                    parts.append(address.get('suburb') or address['neighbourhood'])
+                
+                # Add city
+                if address.get('city') or address.get('town') or address.get('village'):
+                    parts.append(address.get('city') or address.get('town') or address['village'])
+                
+                # Add state
+                if address.get('state'):
+                    parts.append(address['state'])
+                
+                if parts:
+                    location_name = ", ".join(parts)
+                    return f"{location_name} (GPS: {lat:.4f}, {lng:.4f})"
+                
+        except Exception as e:
+            logger.debug(f"Reverse geocoding failed: {e}")
+        
+        # Fallback to coordinates
+        lat_dir = "N" if lat >= 0 else "S"
+        lng_dir = "E" if lng >= 0 else "W"
+        return f"GPS Coordinates: {abs(lat):.6f}°{lat_dir}, {abs(lng):.6f}°{lng_dir}"
     
     def _format_location(self, location: Optional[Dict]) -> str:
         """
@@ -101,7 +167,7 @@ class ComplaintWriter:
             location: Location dictionary with latitude/longitude
             
         Returns:
-            Formatted location string
+            Formatted location string with name and coordinates
         """
         if not location:
             return "Location not specified"
@@ -110,15 +176,7 @@ class ComplaintWriter:
         lng = location.get("longitude")
         
         if lat is not None and lng is not None:
-            # Format coordinates with appropriate precision
-            lat_str = f"{lat:.6f}"
-            lng_str = f"{lng:.6f}"
-            
-            # Add cardinal directions for clarity
-            lat_dir = "N" if lat >= 0 else "S"
-            lng_dir = "E" if lng >= 0 else "W"
-            
-            return f"GPS Coordinates: {abs(lat):.6f}°{lat_dir}, {abs(lng):.6f}°{lng_dir}"
+            return self._get_location_name(float(lat), float(lng))
         
         return "Location coordinates provided"
     
@@ -162,7 +220,8 @@ class ComplaintWriter:
                 issue_type: str, 
                 description: str, 
                 location: Optional[Dict] = None,
-                complaint_id: Optional[str] = None) -> str:
+                complaint_id: Optional[str] = None,
+                language: str = "english") -> str:
         """
         Generate a formal complaint letter.
         
@@ -195,7 +254,16 @@ class ComplaintWriter:
         # Get current date
         current_date = datetime.now().strftime("%B %d, %Y")
         
-        # Generate the complaint
+        # Try Groq AI first, fallback to template
+        if self.groq_client:
+            try:
+                complaint = self._generate_with_groq(issue_type, description, location_str, complaint_id, authority_name, current_date, language)
+                logger.info(f"Generated AI complaint for {issue_type} in {language} (ID: {complaint_id})")
+                return complaint
+            except Exception as e:
+                logger.error(f"Groq generation failed: {e}")
+        
+        # Fallback to template
         try:
             complaint = self.FORMAL_TEMPLATE.format(
                 authority_name=authority_name,
@@ -207,24 +275,11 @@ class ComplaintWriter:
                 priority_statement=priority_statement,
                 complaint_id=complaint_id
             )
-            
-            logger.info(f"Generated complaint for {issue_type} (ID: {complaint_id})")
+            logger.info(f"Generated template complaint for {issue_type} (ID: {complaint_id})")
             return complaint
-            
         except Exception as e:
-            logger.error(f"Error generating complaint: {e}")
-            
-            # Fallback simple template
-            fallback = (
-                f"Complaint regarding {issue_display}\n\n"
-                f"Date: {current_date}\n"
-                f"Location: {location_str}\n\n"
-                f"Description: {description}\n\n"
-                f"This issue requires immediate attention from the concerned authorities.\n\n"
-                f"Complaint ID: {complaint_id}"
-            )
-            
-            return fallback
+            logger.error(f"Template generation failed: {e}")
+            return f"Complaint ID: {complaint_id}\nIssue: {description}\nLocation: {location_str}\nDate: {current_date}"
     
     def generate_acknowledgment(self, complaint_id: str, issue_type: str) -> str:
         """
@@ -295,3 +350,28 @@ class ComplaintWriter:
             self.AUTHORITY_NAMES[issue_type] = authority_name
         
         logger.info(f"Added custom template for issue type: {issue_type}")
+    
+    def _generate_with_groq(self, issue_type: str, description: str, location_str: str, 
+                           complaint_id: str, authority_name: str, current_date: str, language: str) -> str:
+        """Generate complaint using Groq AI"""
+        lang_instruction = "in Hindi" if language == "hindi" else "in English"
+        
+        prompt = f"""Generate a formal complaint letter {lang_instruction} with these details:
+
+Issue Type: {self.ISSUE_DISPLAY_NAMES.get(issue_type, issue_type.title())}
+Description: {description}
+Location: {location_str}
+Date: {current_date}
+Complaint ID: {complaint_id}
+Authority: {authority_name}
+
+The letter should be professional, formal, and request immediate action."""
+        
+        response = self.groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=800
+        )
+        
+        return response.choices[0].message.content.strip()

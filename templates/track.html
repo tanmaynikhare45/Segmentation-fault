@@ -51,7 +51,7 @@
                 
                 <form action="{{ url_for('check_status') }}" method="post" class="track-form">
                     <div class="search-group">
-                        <input type="text" name="complaint_id" placeholder="Enter Complaint ID" required>
+                        <input type="text" name="complaint_id" placeholder="Enter Complaint ID (32 characters)" required maxlength="32" style="font-family: monospace; text-transform: lowercase;">
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-search"></i> Check Status
                         </button>

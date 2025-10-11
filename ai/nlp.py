@@ -32,7 +32,7 @@ class ComplaintNLPAnalyzer:
             "dim light", "flickering", "no light", "बत्ती", "रोशनी", "लाइट"
         ],
         "waterlogging": [
-            "waterlog", "waterlogging", "flood", "water on road", "drainage",
+            "waterlog", "waterlogging", "water logging", "flood", "water on road", "drainage",
             "water stagnant", "overflow", "blocked drain", "water accumulation",
             "puddle", "standing water", "सड़क पर पानी", "जल भराव", "बाढ़"
         ],
@@ -59,20 +59,8 @@ class ComplaintNLPAnalyzer:
     
     def _initialize_model(self):
         """Initialize the zero-shot classification model."""
-        try:
-            from transformers import pipeline
-            logger.info(f"Initializing NLP analyzer with model: {self.model_id}")
-            self.zero_shot_pipeline = pipeline(
-                "zero-shot-classification", 
-                model=self.model_id
-            )
-            logger.info("NLP analyzer initialized successfully")
-        except ImportError:
-            logger.warning("Transformers not available, NLP will use keyword fallback")
-            self.zero_shot_pipeline = None
-        except Exception as e:
-            logger.error(f"Failed to initialize NLP model: {e}")
-            self.zero_shot_pipeline = None
+        logger.info("Using keyword-based classification only")
+        self.zero_shot_pipeline = None
     
     def _classify_with_keywords(self, text: str) -> str:
         """
@@ -166,17 +154,13 @@ class ComplaintNLPAnalyzer:
         content = text.strip()
         logger.debug(f"Analyzing text: '{content[:100]}...'")
         
-        # Try model-based classification first
-        if self.zero_shot_pipeline:
-            issue_type = self._classify_with_model(content)
-        else:
-            # Fall back to keyword-based classification
-            issue_type = self._classify_with_keywords(content)
+        # Use keyword-based classification
+        issue_type = self._classify_with_keywords(content)
         
         # Additional analysis could be added here
         result = {
             "issue_type": issue_type,
-            "confidence_method": "model" if self.zero_shot_pipeline else "keywords"
+            "confidence_method": "keywords"
         }
         
         logger.info(f"Text classified as: {issue_type}")

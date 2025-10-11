@@ -22,6 +22,8 @@ from ai.image_classifier import ImageIssueClassifier
 from ai.nlp import ComplaintNLPAnalyzer
 from ai.fake_detection import FakeReportDetector
 from ai.complaint_writer import ComplaintWriter
+from ai.voice_processor import VoiceProcessor
+from ai.news_monitor import NewsMonitor
 from storage.db import CivicDB, ReportRecord
 from utils.gps import normalize_location
 
@@ -126,15 +128,23 @@ def create_app() -> Flask:
     # File upload configuration
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    AUDIO_EXTENSIONS = {'wav', 'mp3', 'ogg', 'm4a'}
     
     def allowed_file(filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    
+    def allowed_audio(filename):
+        return '.' in filename and filename.rsplit('.', 1)[1].lower() in AUDIO_EXTENSIONS
     
     # Initialize services
     classifier = ImageIssueClassifier()
     nlp = ComplaintNLPAnalyzer()
     fake_detector = FakeReportDetector()
-    writer = ComplaintWriter()
+    voice_processor = VoiceProcessor()
+    news_monitor = NewsMonitor()
+    # Load Groq API key from .env file
+    groq_key = " "
+    writer = ComplaintWriter(api_key=groq_key)
     db = CivicDB()
     
     # Routes
@@ -206,6 +216,27 @@ def create_app() -> Flask:
         authorities = db.list_authorities()
         return render_template('admin.html', reports=reports, authorities=authorities)
     
+    @app.route('/authority_dashboard')
+    def authority_dashboard():
+        if 'user' not in session or session.get('user', {}).get('role') not in ['admin', 'authority']:
+            flash('Access denied. Authority privileges required.')
+            return redirect(url_for('home'))
+        
+        reports = db.list_reports(limit=50)
+        
+        # Calculate statistics
+        total_complaints = len(reports)
+        pending_complaints = len([r for r in reports if r.status == 'submitted'])
+        in_progress_complaints = len([r for r in reports if r.status == 'in_progress'])
+        resolved_complaints = len([r for r in reports if r.status == 'resolved'])
+        
+        return render_template('authority_dashboard.html', 
+                             reports=reports,
+                             total_complaints=total_complaints,
+                             pending_complaints=pending_complaints,
+                             in_progress_complaints=in_progress_complaints,
+                             resolved_complaints=resolved_complaints)
+    
     # Authentication routes
     @app.route('/auth/login', methods=['POST'])
     def login():
@@ -235,6 +266,7 @@ def create_app() -> Flask:
         username = request.form.get('username')
         email = request.form.get('email')
         password = request.form.get('password')
+        role = request.form.get('role', 'citizen')
         
         if not all([name, username, email, password]):
             flash('All fields are required', 'error')
@@ -250,10 +282,10 @@ def create_app() -> Flask:
             flash('Username already exists', 'error')
             return redirect(url_for('signup_page'))
         
-        # Create user
-        success = db.create_user(username, email, password, name)
+        # Create user with role
+        success = db.create_user(username, email, password, name, role)
         if success:
-            flash('Account created successfully! Please login', 'success')
+            flash(f'Account created successfully as {role}! Please login', 'success')
             return redirect(url_for('login_page'))
         else:
             flash('Error creating account', 'error')
@@ -264,6 +296,11 @@ def create_app() -> Flask:
         session.pop('user', None)
         flash('You have been logged out')
         return redirect(url_for('index'))
+    
+    # Alias for authority dashboard logout
+    @app.route('/auth_logout')
+    def auth_logout():
+        return logout()
     
     # Issue reporting route
     @app.route('/submit_report', methods=['POST'])
@@ -276,6 +313,26 @@ def create_app() -> Flask:
         latitude = request.form.get('latitude')
         longitude = request.form.get('longitude')
         issue_type_manual = request.form.get('issue_type')
+        language = request.form.get('language', 'english')
+        
+        # Process voice input if provided
+        voice_text = None
+        if 'voice' in request.files:
+            voice_file = request.files['voice']
+            if voice_file and voice_file.filename and allowed_audio(voice_file.filename):
+                voice_filename = secure_filename(voice_file.filename)
+                voice_name, voice_ext = os.path.splitext(voice_filename)
+                voice_filename = f"{voice_name}_{uuid.uuid4().hex[:8]}{voice_ext}"
+                voice_path = os.path.join(upload_dir, voice_filename)
+                voice_file.save(voice_path)
+                
+                # Process voice
+                voice_result = voice_processor.process_audio_file(voice_path)
+                voice_text = voice_result.get('original_text', '')
+                if not text and voice_text:
+                    text = voice_text  # Use voice as primary text if no typed text
+                elif voice_text:
+                    text = f"{text} [Voice: {voice_text}]"  # Append voice text
         
         image_path = None
         if 'image' in request.files:
@@ -317,15 +374,17 @@ def create_app() -> Flask:
             issue_type=issue_type,
             description=text or "",
             location=location,
+            language=language
         )
         
         # Persist
+        report_id = uuid.uuid4().hex
         record = ReportRecord(
-            report_id=uuid.uuid4().hex,
+            report_id=report_id,
             created_at=datetime.utcnow().isoformat() + "Z",
             issue_type=issue_type,
             text=text,
-            voice_text=None,
+            voice_text=voice_text,
             image_path=image_path,
             location=location,
             complaint_text=complaint_text,
@@ -333,12 +392,15 @@ def create_app() -> Flask:
             fake=is_fake,
             fake_score=fake_score,
         )
-        db.save_report(record)
+        
+        logging.getLogger(__name__).info(f"Generated report ID: {report_id}")
+        save_success = db.save_report(record)
+        logging.getLogger(__name__).info(f"Report save result: {save_success}")
         
         if is_fake:
-            flash(f'Report submitted but flagged for review (ID: {record.report_id})')
+            flash(f'Report submitted but flagged for review. Complaint ID: {report_id}')
         else:
-            flash(f'Report submitted successfully! Your complaint ID is: {record.report_id}')
+            flash(f'Report submitted successfully! Complaint ID: {report_id} (Copy this ID to track your complaint)')
         
         return redirect(url_for('track_page'))
     
@@ -350,9 +412,13 @@ def create_app() -> Flask:
             flash('Please enter a complaint ID')
             return redirect(url_for('track_page'))
         
+        # Clean the complaint ID (remove spaces, convert to lowercase if needed)
+        complaint_id = complaint_id.strip()
+        logging.getLogger(__name__).info(f"Tracking complaint ID: '{complaint_id}' (length: {len(complaint_id)})")
+        
         record = db.get_report(complaint_id)
         if not record:
-            flash('Complaint not found')
+            flash(f'Complaint not found: {complaint_id}')
             return redirect(url_for('track_page'))
         
         return render_template('track.html', record=record)
@@ -438,6 +504,115 @@ def create_app() -> Flask:
         if not record:
             return jsonify({"error": "not_found"}), 404
         return jsonify(asdict(record))
+    
+    @app.route('/api/news_issues', methods=['POST'])
+    def api_news_issues():
+        """Get civic issues from recent news and social media"""
+        try:
+            city = request.json.get('city', 'Gwalior') if request.is_json else 'Gwalior'
+            issues = news_monitor.generate_complaints_from_news()
+            return jsonify({"issues": issues, "sources": ["news", "twitter", "reddit"]})
+        except Exception as e:
+            logging.getLogger(__name__).error(f"News API error: {e}")
+            return jsonify({"error": "failed_to_fetch_news", "issues": []}), 500
+    
+    @app.route('/api/voice_process_async', methods=['POST'])
+    def api_voice_process_async():
+        """Voice processing endpoint with better error handling"""
+        try:
+            if 'audio' not in request.files:
+                return jsonify({"success": False, "error": "no_audio"}), 400
+            
+            audio_file = request.files['audio']
+            if not audio_file or not audio_file.filename:
+                return jsonify({"success": False, "error": "empty_audio"}), 400
+            
+            # Save and convert audio file
+            temp_name = f"voice_{uuid.uuid4().hex[:8]}.wav"
+            temp_path = os.path.join(upload_dir, temp_name)
+            
+            # Save original file first
+            audio_file.save(temp_path)
+            
+            # Convert to WAV if needed
+            if not temp_path.lower().endswith('.wav'):
+                try:
+                    import pydub
+                    audio = pydub.AudioSegment.from_file(temp_path)
+                    wav_path = temp_path.replace(os.path.splitext(temp_path)[1], '.wav')
+                    audio.export(wav_path, format='wav')
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    temp_path = wav_path
+                except ImportError:
+                    logger.warning("pydub not available for audio conversion")
+                except Exception as e:
+                    logger.warning(f"Audio conversion failed: {e}")
+            
+            # Process voice
+            result = voice_processor.process_audio_file(temp_path)
+            
+            # Cleanup
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except:
+                pass
+            
+            text = result.get('original_text', '').strip()
+            analysis = result.get('analysis', {})
+            
+            if text and len(text) > 0:
+                # Use analyzed complaint summary if available
+                display_text = analysis.get('complaint_summary', text) if analysis else text
+                
+                return jsonify({
+                    "success": True,
+                    "text": display_text,
+                    "original_text": text,
+                    "language": result.get('detected_language', 'unknown'),
+                    "confidence": result.get('confidence', 0.7),
+                    "processing_time": result.get('processing_time', 1.0),
+                    "issue_type": analysis.get('issue_type', 'unknown'),
+                    "location": analysis.get('location'),
+                    "urgency": analysis.get('urgency', 'medium'),
+                    "keywords": analysis.get('keywords', [])
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "no_speech_detected",
+                    "message": "No speech detected. Please ensure audio is clear and contains speech."
+                })
+                
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Voice processing error: {e}")
+            return jsonify({
+                "success": False,
+                "error": "processing_failed",
+                "message": "Voice recognition failed. Try speaking more clearly."
+            }), 500
+    
+    @app.route('/api/update_status', methods=['POST'])
+    def api_update_status():
+        """Update complaint status via API"""
+        if 'user' not in session or session.get('user', {}).get('role') not in ['admin', 'authority']:
+            return jsonify({"error": "unauthorized"}), 403
+        
+        data = request.get_json()
+        report_id = data.get('report_id')
+        new_status = data.get('status')
+        
+        if not report_id or not new_status:
+            return jsonify({"error": "missing_data"}), 400
+        
+        success = db.update_status(report_id, new_status)
+        
+        if success:
+            logging.getLogger(__name__).info(f"Status updated: {report_id} -> {new_status}")
+            return jsonify({"success": True})
+        else:
+            return jsonify({"error": "update_failed"}), 500
     
     # Chatbot route
     @app.route('/chatbot', methods=['POST'])

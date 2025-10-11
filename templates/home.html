@@ -26,6 +26,9 @@
                 {% if user.role == 'admin' %}
                     <a href="{{ url_for('admin_page') }}" class="btn btn-small"><i class="fas fa-cog"></i> Admin</a>
                 {% endif %}
+                {% if user.role in ['admin', 'authority'] %}
+                    <a href="{{ url_for('authority_dashboard') }}" class="btn btn-small"><i class="fas fa-tasks"></i> Authority</a>
+                {% endif %}
                 <a href="{{ url_for('profile_page') }}" class="btn btn-small"><i class="fas fa-user"></i> Profile</a>
                 <a href="{{ url_for('logout') }}" class="btn btn-small"><i class="fas fa-sign-out-alt"></i> Logout</a>
             </div>
@@ -219,5 +222,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/chatbot.css') }}">
     <script src="{{ url_for('static', filename='chatbot.js') }}"></script>
 
+    <script src="{{ url_for('static', filename='js/voice_recorder.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/news_social_feed.js') }}"></script>
 </body>
 </html>
