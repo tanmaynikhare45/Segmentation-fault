@@ -121,6 +121,8 @@
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script src="{{ url_for('static', filename='js/voice_recorder_working.js') }}"></script>
     <script src="{{ url_for('static', filename='js/news_social_feed.js') }}"></script>
+    <!-- exifr for client-side EXIF reading -->
+    <script src="https://unpkg.com/exifr/dist/lite.umd.js"></script>
     <!-- Leaflet JS for map preview -->
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -147,6 +149,19 @@
                 preview.style.display = 'block';
             }
             reader.readAsDataURL(file);
+
+            // Try client-side EXIF GPS extraction to auto-fill lat/lng
+            try {
+                if (window.exifr && exifr.gps) {
+                    const gps = await exifr.gps(file);
+                    if (gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number') {
+                        setInputs(gps.latitude, gps.longitude);
+                        initializeMap(gps.latitude, gps.longitude);
+                    }
+                }
+            } catch (ex) {
+                console.warn('EXIF GPS read failed:', ex);
+            }
 
             // Call backend detector for annotated preview
             try {

@@ -6,6 +6,7 @@ import logging
 import warnings
 from datetime import datetime
 from dataclasses import asdict
+from PIL import Image, ExifTags
 
 from flask import Flask, render_template, request, jsonify
 from openai import OpenAI
@@ -129,13 +130,12 @@ def create_app() -> Flask:
     app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
     AUDIO_EXTENSIONS = {'wav', 'mp3', 'ogg', 'm4a'}
-    
     def allowed_file(filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
     
     def allowed_audio(filename):
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in AUDIO_EXTENSIONS
-    
+
     # Initialize services
     classifier = ImageIssueClassifier()
     nlp = ComplaintNLPAnalyzer()
@@ -344,6 +344,12 @@ def create_app() -> Flask:
                 filename = f"{name}_{uuid.uuid4().hex[:8]}{ext}"
                 image_path = os.path.join(upload_dir, filename)
                 file.save(image_path)
+                # If lat/lon not provided, try EXIF
+                if not latitude or not longitude:
+                    exif_lat, exif_lon = extract_gps_from_image(image_path)
+                    if exif_lat is not None and exif_lon is not None:
+                        latitude = str(exif_lat)
+                        longitude = str(exif_lon)
         
         # AI: classify and analyze
         predicted_issue = None
