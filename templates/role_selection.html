@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Your Role - Civic Eye</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .role-selection-container {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+        }
+        .role-cards-wrapper {
+            max-width: 900px;
+            width: 100%;
+        }
+        .role-header {
+            text-align: center;
+            color: white;
+            margin-bottom: 50px;
+        }
+        .role-header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+        }
+        .role-header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        .role-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+        }
+        .role-card {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .role-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+        .role-card.user {
+            border-top: 5px solid #3498db;
+        }
+        .role-card.admin {
+            border-top: 5px solid #e74c3c;
+        }
+        .role-icon {
+            font-size: 5em;
+            margin-bottom: 20px;
+        }
+        .role-card.user .role-icon {
+            color: #3498db;
+        }
+        .role-card.admin .role-icon {
+            color: #e74c3c;
+        }
+        .role-card h2 {
+            font-size: 2em;
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        .role-card p {
+            color: #7f8c8d;
+            font-size: 1.1em;
+            margin-bottom: 25px;
+            line-height: 1.6;
+        }
+        .role-btn {
+            display: inline-block;
+            padding: 15px 40px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.1em;
+            transition: all 0.3s ease;
+        }
+        .role-card.user .role-btn {
+            background: #3498db;
+            color: white;
+        }
+        .role-card.user .role-btn:hover {
+            background: #2980b9;
+        }
+        .role-card.admin .role-btn {
+            background: #e74c3c;
+            color: white;
+        }
+        .role-card.admin .role-btn:hover {
+            background: #c0392b;
+        }
+        .back-home {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .back-home a {
+            color: white;
+            text-decoration: none;
+            font-size: 1.1em;
+            opacity: 0.9;
+            transition: opacity 0.3s;
+        }
+        .back-home a:hover {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="role-selection-container">
+        <div class="role-cards-wrapper">
+            <div class="role-header">
+                <h1><i class="fas fa-eye"></i> Civic Eye</h1>
+                <p>Choose how you want to {{ action }}</p>
+            </div>
+            
+            <div class="role-cards">
+                <div class="role-card user" onclick="window.location.href='{{ url_for(target_route, role='user') }}'">
+                    <div class="role-icon">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <h2>User</h2>
+                    <p>Report civic issues, track complaints, and contribute to your community</p>
+                    <a href="{{ url_for(target_route, role='user') }}" class="role-btn">
+                        Continue as User <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+                
+                <div class="role-card admin" onclick="window.location.href='{{ url_for(target_route, role='admin') }}'">
+                    <div class="role-icon">
+                        <i class="fas fa-user-shield"></i>
+                    </div>
+                    <h2>Admin</h2>
+                    <p>Manage all users, review complaints, update statuses, and oversee the platform</p>
+                    <a href="{{ url_for(target_route, role='admin') }}" class="role-btn">
+                        Continue as Admin <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+            
+            <div class="back-home">
+                <a href="{{ url_for('index') }}">
+                    <i class="fas fa-arrow-left"></i> Back to Home
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

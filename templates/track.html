@@ -73,6 +73,12 @@
                                 <strong><i class="fas fa-hashtag"></i> ID:</strong>
                                 <span>{{ record.report_id }}</span>
                             </div>
+                            {% if record.username %}
+                            <div class="detail-item">
+                                <strong><i class="fas fa-user"></i> Reported By:</strong>
+                                <span>{{ record.username }}</span>
+                            </div>
+                            {% endif %}
                             <div class="detail-item">
                                 <strong><i class="fas fa-calendar"></i> Submitted:</strong>
                                 <span>{{ record.created_at }}</span>

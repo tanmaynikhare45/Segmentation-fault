@@ -192,13 +192,30 @@ def create_app() -> Flask:
     def index():
         return render_template('index.html')
     
+    # Role selection routes
     @app.route('/login')
     def login_page():
-        return render_template('login.html')
+        return redirect(url_for('login_role_selection'))
     
     @app.route('/signup')
     def signup_page():
-        return render_template('signup.html')
+        return redirect(url_for('signup_role_selection'))
+    
+    @app.route('/login/select')
+    def login_role_selection():
+        return render_template('role_selection.html', action='login', target_route='login_page_role')
+    
+    @app.route('/signup/select')
+    def signup_role_selection():
+        return render_template('role_selection.html', action='sign up', target_route='signup_page_role')
+    
+    @app.route('/login/<role>')
+    def login_page_role(role):
+        return render_template('login.html', role=role)
+    
+    @app.route('/signup/<role>')
+    def signup_page_role(role):
+        return render_template('signup.html', role=role)
     
     @app.route('/home')
     def home():
@@ -223,6 +240,12 @@ def create_app() -> Flask:
     def report_page():
         if 'user' not in session:
             return redirect(url_for('login_page'))
+        
+        # Admins cannot report issues - they only manage
+        if session.get('user', {}).get('role') == 'admin':
+            flash('Admins cannot report issues. You can only manage complaints from the Admin Dashboard.')
+            return redirect(url_for('admin_page'))
+        
         return render_template('report.html')
     
     @app.route('/track')
@@ -256,6 +279,16 @@ def create_app() -> Flask:
             return redirect(url_for('login_page'))
         
         username = session.get('user', {}).get('username')
+        user_role = session.get('user', {}).get('role')
+        
+        # Admin gets different profile - user management
+        if user_role == 'admin':
+            users_with_stats = db.get_all_users_with_stats()
+            return render_template('admin_profile.html', 
+                                 user=session.get('user'),
+                                 all_users=users_with_stats)
+        
+        # Regular user profile
         user_data = db.find_user(username)
         
         if user_data:
@@ -305,30 +338,35 @@ def create_app() -> Flask:
         if 'user' not in session or session.get('user', {}).get('role') != 'admin':
             flash('Access denied. Admin privileges required.')
             return redirect(url_for('home'))
-        reports = db.list_reports(limit=100)
-        authorities = db.list_authorities()
-        return render_template('admin.html', reports=reports, authorities=authorities)
+        
+        # Get all users with their statistics (exclude admins from user list)
+        all_users = db.get_all_users_with_stats()
+        users_with_stats = [u for u in all_users if u.get('role') != 'admin']
+        
+        # Get all reports from non-admin users only
+        all_reports = db.list_reports(limit=200)
+        user_reports = [r for r in all_reports if r.username and db.find_user(r.username) and db.find_user(r.username).get('role') != 'admin']
+        
+        # Calculate overall statistics
+        total_users = len(users_with_stats)
+        total_reports = len(user_reports)
+        total_resolved = len([r for r in user_reports if r.status == 'resolved'])
+        total_pending = len([r for r in user_reports if r.status in ['submitted', 'in_progress']])
+        total_fake = len([r for r in user_reports if r.fake])
+        
+        return render_template('admin.html', 
+                             users=users_with_stats,
+                             reports=user_reports,
+                             total_users=total_users,
+                             total_reports=total_reports,
+                             total_resolved=total_resolved,
+                             total_pending=total_pending,
+                             total_fake=total_fake)
     
+    # Redirect old authority dashboard to admin
     @app.route('/authority_dashboard')
     def authority_dashboard():
-        if 'user' not in session or session.get('user', {}).get('role') not in ['admin', 'authority']:
-            flash('Access denied. Authority privileges required.')
-            return redirect(url_for('home'))
-        
-        reports = db.list_reports(limit=50)
-        
-        # Calculate statistics
-        total_complaints = len(reports)
-        pending_complaints = len([r for r in reports if r.status == 'submitted'])
-        in_progress_complaints = len([r for r in reports if r.status == 'in_progress'])
-        resolved_complaints = len([r for r in reports if r.status == 'resolved'])
-        
-        return render_template('authority_dashboard.html', 
-                             reports=reports,
-                             total_complaints=total_complaints,
-                             pending_complaints=pending_complaints,
-                             in_progress_complaints=in_progress_complaints,
-                             resolved_complaints=resolved_complaints)
+        return redirect(url_for('admin_page'))
     
     # Authentication routes
     @app.route('/auth/login', methods=['POST'])
@@ -397,6 +435,10 @@ def create_app() -> Flask:
         password = request.form.get('password')
         role = request.form.get('role', 'citizen')
         
+        # Normalize role: convert 'user' to 'citizen', keep 'admin'
+        if role == 'user':
+            role = 'citizen'
+        
         if not all([name, username, email, password]):
             flash('All fields are required', 'error')
             return redirect(url_for('signup_page'))
@@ -414,11 +456,11 @@ def create_app() -> Flask:
         # Create user with role
         success = db.create_user(username, email, password, name, role)
         if success:
-            flash(f'Account created successfully as {role}! Please login', 'success')
-            return redirect(url_for('login_page'))
+            flash(f'Account created successfully! Please login', 'success')
+            return redirect(url_for('login_page_role', role='admin' if role == 'admin' else 'user'))
         else:
             flash('Error creating account', 'error')
-            return redirect(url_for('signup_page'))
+            return redirect(url_for('signup_page_role', role='admin' if role == 'admin' else 'user'))
     
     @app.route('/auth/logout')
     def logout():
@@ -587,7 +629,7 @@ def create_app() -> Flask:
     # Admin status update route
     @app.route('/update_status', methods=['POST'])
     def update_status():
-        if 'user' not in session or session.get('user', {}).get('role') not in ['admin', 'authority']:
+        if 'user' not in session or session.get('user', {}).get('role') != 'admin':
             flash('Access denied')
             return redirect(url_for('home'))
         
@@ -769,7 +811,7 @@ def create_app() -> Flask:
     @app.route('/api/update_status', methods=['POST'])
     def api_update_status():
         """Update complaint status via API"""
-        if 'user' not in session or session.get('user', {}).get('role') not in ['admin', 'authority']:
+        if 'user' not in session or session.get('user', {}).get('role') != 'admin':
             return jsonify({"error": "unauthorized"}), 403
         
         data = request.get_json()
@@ -795,6 +837,53 @@ def create_app() -> Flask:
             return jsonify({"success": True})
         else:
             return jsonify({"error": "update_failed"}), 500
+    
+    @app.route('/api/adjust_points', methods=['POST'])
+    def api_adjust_points():
+        """Admin endpoint to manually adjust user points"""
+        if 'user' not in session or session.get('user', {}).get('role') != 'admin':
+            return jsonify({"error": "unauthorized"}), 403
+        
+        data = request.get_json()
+        username = data.get('username')
+        points_delta = data.get('points_delta')
+        
+        if not username or points_delta is None:
+            return jsonify({"error": "missing_data"}), 400
+        
+        try:
+            points_delta = int(points_delta)
+        except ValueError:
+            return jsonify({"error": "invalid_points"}), 400
+        
+        success = db.adjust_user_points(username, points_delta)
+        
+        if success:
+            new_points = db.get_user_points(username)
+            logging.getLogger(__name__).info(f"Admin adjusted points for {username}: {points_delta:+d}, new total: {new_points}")
+            return jsonify({"success": True, "new_points": new_points})
+        else:
+            return jsonify({"error": "update_failed"}), 500
+    
+    @app.route('/api/delete_complaint', methods=['POST'])
+    def api_delete_complaint():
+        """Admin endpoint to delete a complaint"""
+        if 'user' not in session or session.get('user', {}).get('role') != 'admin':
+            return jsonify({"error": "unauthorized"}), 403
+        
+        data = request.get_json()
+        report_id = data.get('report_id')
+        
+        if not report_id:
+            return jsonify({"error": "missing_data"}), 400
+        
+        success = db.delete_report(report_id)
+        
+        if success:
+            logging.getLogger(__name__).info(f"Admin deleted complaint: {report_id}")
+            return jsonify({"success": True})
+        else:
+            return jsonify({"error": "delete_failed"}), 500
     
     def _update_user_gamification(username: str, old_status: str, new_status: str, is_fake: bool):
         """Helper function to update user gamification stats when status changes"""

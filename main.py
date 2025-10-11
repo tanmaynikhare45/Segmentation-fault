@@ -20,4 +20,3 @@ db.create_user("authority1", "auth@civic.com", "password", "Authority User", "au
 
 
 
-   

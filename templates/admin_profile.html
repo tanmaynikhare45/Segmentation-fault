@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Profile - Civic Eye</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .admin-profile-header {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .admin-profile-header h2 {
+            margin: 0 0 10px 0;
+            font-size: 2.5em;
+        }
+        .admin-profile-header p {
+            margin: 0;
+            opacity: 0.9;
+        }
+        .user-management-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .user-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .user-row:last-child {
+            border-bottom: none;
+        }
+        .user-info-compact {
+            flex: 1;
+        }
+        .user-info-compact h4 {
+            margin: 0 0 5px 0;
+            color: #2c3e50;
+        }
+        .user-info-compact p {
+            margin: 0;
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        .points-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .points-display {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #f39c12;
+            min-width: 80px;
+            text-align: center;
+        }
+        .points-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background 0.3s;
+        }
+        .points-btn:hover {
+            background: #2980b9;
+        }
+        .points-btn.decrease {
+            background: #e74c3c;
+        }
+        .points-btn.decrease:hover {
+            background: #c0392b;
+        }
+        .search-box {
+            margin-bottom: 20px;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+    </style>
+</head>
+<body>
+    <header class="main-header">
+        <div class="header-content">
+            <h1><i class="fas fa-shield-alt"></i> <a href="{{ url_for('home') }}">Civic Eye</a></h1>
+            <nav class="main-nav">
+                <ul>
+                    <li><a href="{{ url_for('home') }}"><i class="fas fa-home"></i> Home</a></li>
+                    <li><a href="{{ url_for('admin_page') }}"><i class="fas fa-users-cog"></i> Admin Dashboard</a></li>
+                    <li><a href="{{ url_for('profile_page') }}" class="active"><i class="fas fa-user-shield"></i> Profile</a></li>
+                    <li><a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="container">
+            <div class="admin-profile-header">
+                <h2><i class="fas fa-user-shield"></i> Admin Profile</h2>
+                <p>Manage user points and oversee platform activity</p>
+                <p style="margin-top: 10px;"><strong>Logged in as:</strong> {{ user.username }}</p>
+            </div>
+
+            <div class="user-management-card">
+                <h3><i class="fas fa-users"></i> User Points Management</h3>
+                <p style="color: #7f8c8d; margin-bottom: 20px;">Adjust user points based on their activity and contributions</p>
+                
+                <div class="search-box">
+                    <input type="text" id="userSearch" placeholder="Search users by name or email..." onkeyup="filterUsers()">
+                </div>
+
+                <div id="usersContainer">
+                    {% for user_item in all_users %}
+                    {% if user_item.role != 'admin' %}
+                    <div class="user-row" data-username="{{ user_item.username|lower }}" data-email="{{ user_item.email|lower }}">
+                        <div class="user-info-compact">
+                            <h4>
+                                <i class="fas fa-user-circle"></i> {{ user_item.username }}
+                                <span style="background: #3498db; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.7em; margin-left: 10px;">
+                                    {{ user_item.role|upper }}
+                                </span>
+                            </h4>
+                            <p>{{ user_item.email }}</p>
+                            <p style="margin-top: 5px;">
+                                <span style="color: #27ae60;"><i class="fas fa-check-circle"></i> {{ user_item.resolved_complaints }} resolved</span> | 
+                                <span style="color: #f39c12;"><i class="fas fa-clock"></i> {{ user_item.pending_complaints }} pending</span> | 
+                                <span style="color: #e74c3c;"><i class="fas fa-flag"></i> {{ user_item.fake_complaints }} flagged</span>
+                            </p>
+                        </div>
+                        <div class="points-control">
+                            <button class="points-btn decrease" onclick="adjustPoints('{{ user_item.username }}', -10)">
+                                <i class="fas fa-minus"></i> 10
+                            </button>
+                            <button class="points-btn decrease" onclick="adjustPoints('{{ user_item.username }}', -5)">
+                                <i class="fas fa-minus"></i> 5
+                            </button>
+                            <div class="points-display" id="points-{{ user_item.username }}">
+                                <i class="fas fa-trophy"></i> {{ user_item.civic_points }}
+                            </div>
+                            <button class="points-btn" onclick="adjustPoints('{{ user_item.username }}', 5)">
+                                <i class="fas fa-plus"></i> 5
+                            </button>
+                            <button class="points-btn" onclick="adjustPoints('{{ user_item.username }}', 10)">
+                                <i class="fas fa-plus"></i> 10
+                            </button>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function filterUsers() {
+            const searchTerm = document.getElementById('userSearch').value.toLowerCase();
+            const userRows = document.querySelectorAll('.user-row');
+            
+            userRows.forEach(row => {
+                const username = row.dataset.username;
+                const email = row.dataset.email;
+                
+                if (username.includes(searchTerm) || email.includes(searchTerm)) {
+                    row.style.display = 'flex';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        function adjustPoints(username, delta) {
+            fetch('/api/adjust_points', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    username: username,
+                    points_delta: delta
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update the points display
+                    const pointsElement = document.getElementById('points-' + username);
+                    pointsElement.innerHTML = '<i class="fas fa-trophy"></i> ' + data.new_points;
+                    
+                    // Show success feedback
+                    pointsElement.style.color = delta > 0 ? '#27ae60' : '#e74c3c';
+                    setTimeout(() => {
+                        pointsElement.style.color = '#f39c12';
+                    }, 1000);
+                } else {
+                    alert('Failed to adjust points: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to adjust points');
+            });
+        }
+    </script>
+</body>
+</html>

@@ -30,8 +30,19 @@
                     <i class="fas fa-eye"></i>
                     <span>Civic Eye</span>
                 </div>
-                <h2>Welcome Back</h2>
-                <p>log  in to your account to continue</p>
+                {% if role == 'admin' %}
+                    <h2>Welcome Admin</h2>
+                    <p>Sign in to access the Admin Dashboard</p>
+                    <div style="background: #ffe6e6; padding: 10px; border-radius: 8px; margin-top: 10px;">
+                        <small style="color: #c0392b;">
+                            <i class="fas fa-shield-alt"></i> 
+                            <strong>Admin Access:</strong> Full platform management and oversight
+                        </small>
+                    </div>
+                {% else %}
+                    <h2>Welcome User</h2>
+                    <p>Log in to your account to continue</p>
+                {% endif %}
             </div>
             
             {% with messages = get_flashed_messages() %}
@@ -67,11 +78,13 @@
                     <i class="fas fa-arrow-right"></i>
                 </button>
                 
+                <input type="hidden" name="role" value="{{ role or 'user' }}">
+                
                 <div class="auth-footer">
-                    <p>Don't have an account? <a href="{{ url_for('signup_page') }}">Create Account</a></p>
-                    <a href="{{ url_for('index') }}" class="back-link">
+                    <p>Don't have an account? <a href="{{ url_for('signup_page_role', role=role or 'user') }}">Create Account</a></p>
+                    <a href="{{ url_for('login_role_selection') }}" class="back-link">
                         <i class="fas fa-arrow-left"></i>
-                        Back to Home
+                        Change Role
                     </a>
                 </div>
             </form>

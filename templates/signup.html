@@ -30,8 +30,25 @@
                     <i class="fas fa-eye"></i>
                     <span>Civic Eye</span>
                 </div>
-                <h2>Join Our Community</h2>
-                <p>Create your account to start reporting civic issues</p>
+                {% if role == 'admin' %}
+                    <h2>Create Admin Account</h2>
+                    <p>Register to manage the Civic Eye platform</p>
+                    <div class="role-info" style="background: #ffe6e6; padding: 10px; border-radius: 8px; margin-top: 10px;">
+                        <small style="color: #c0392b;">
+                            <i class="fas fa-shield-alt"></i> 
+                            <strong>Admin Access:</strong> You'll have full control over users, complaints, and system management.
+                        </small>
+                    </div>
+                {% else %}
+                    <h2>Join Our Community</h2>
+                    <p>Create your account to start reporting civic issues</p>
+                    <div class="role-info" style="background: #e8f5e9; padding: 10px; border-radius: 8px; margin-top: 10px;">
+                        <small style="color: #27ae60;">
+                            <i class="fas fa-info-circle"></i> 
+                            <strong>User Account:</strong> Report issues, track complaints, and earn civic points.
+                        </small>
+                    </div>
+                {% endif %}
             </div>
             
             {% with messages = get_flashed_messages() %}
@@ -76,16 +93,7 @@
                     </div>
                 </div>
                 
-                <div class="form-group">
-                    <div class="input-wrapper">
-                        <i class="fas fa-user-tag input-icon"></i>
-                        <select name="role" required>
-                            <option value="citizen">Citizen</option>
-                            <option value="admin">Admin</option>
-                            <option value="authority">Authority</option>
-                        </select>
-                    </div>
-                </div>
+                <input type="hidden" name="role" value="{{ role or 'citizen' }}">
                 
                 <button type="submit" class="auth-btn">
                     <span>Create Account</span>
@@ -93,10 +101,10 @@
                 </button>
                 
                 <div class="auth-footer">
-                    <p>Already have an account? <a href="{{ url_for('login_page') }}">Sign In</a></p>
-                    <a href="{{ url_for('index') }}" class="back-link">
+                    <p>Already have an account? <a href="{{ url_for('login_page_role', role=role or 'user') }}">Sign In</a></p>
+                    <a href="{{ url_for('signup_role_selection') }}" class="back-link">
                         <i class="fas fa-arrow-left"></i>
-                        Back to Home
+                        Change Role
                     </a>
                 </div>
             </form>

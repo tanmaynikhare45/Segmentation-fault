@@ -210,7 +210,7 @@ class CivicDB:
             return []
     
     def get_user_points(self, username: str) -> int:
-        """Calculate civic points for user based on verified complaints"""
+        """Calculate civic points for user based on verified complaints + manual adjustments"""
         if self.db is None or not username:
             return 0
         try:
@@ -219,7 +219,9 @@ class CivicDB:
                 "status": "resolved",
                 "fake": False
             })
-            return resolved_count * 10  # 10 points per resolved complaint
+            auto_points = resolved_count * 10  # 10 points per resolved complaint
+            manual_points = self.get_user_manual_points(username)
+            return auto_points + manual_points
         except Exception:
             logging.getLogger(__name__).exception("Error calculating user points")
             return 0
@@ -272,3 +274,88 @@ class CivicDB:
         except Exception:
             logging.getLogger(__name__).exception("Error getting notifications")
             return []
+    
+    def get_all_users_with_stats(self) -> List[dict]:
+        """Get all users with their complaint statistics"""
+        if self.db is None:
+            return []
+        try:
+            users = list(self.db.users.find({}, {"password": 0}))  # Exclude password
+            
+            for user in users:
+                username = user.get("username")
+                if username:
+                    # Get user reports
+                    user_reports = self.get_user_reports(username)
+                    
+                    # Calculate stats
+                    total_complaints = len(user_reports)
+                    resolved_complaints = len([r for r in user_reports if r.status == 'resolved'])
+                    pending_complaints = len([r for r in user_reports if r.status in ['submitted', 'in_progress']])
+                    fake_complaints = len([r for r in user_reports if r.fake])
+                    
+                    # Get civic points
+                    civic_points = self.get_user_points(username)
+                    
+                    # Add stats to user object
+                    user['total_complaints'] = total_complaints
+                    user['resolved_complaints'] = resolved_complaints
+                    user['pending_complaints'] = pending_complaints
+                    user['fake_complaints'] = fake_complaints
+                    user['civic_points'] = civic_points
+                    user['recent_reports'] = user_reports[:5]  # Last 5 reports
+                else:
+                    user['total_complaints'] = 0
+                    user['resolved_complaints'] = 0
+                    user['pending_complaints'] = 0
+                    user['fake_complaints'] = 0
+                    user['civic_points'] = 0
+                    user['recent_reports'] = []
+            
+            return users
+        except Exception:
+            logging.getLogger(__name__).exception("Error getting all users with stats")
+            return []
+    
+    def adjust_user_points(self, username: str, points_delta: int) -> bool:
+        """Manually adjust user points (admin only)"""
+        if self.db is None or not username:
+            return False
+        try:
+            # Get current points
+            current_points = self.get_user_points(username)
+            
+            # Store manual adjustment in user document
+            result = self.db.users.update_one(
+                {"username": username},
+                {
+                    "$inc": {"manual_points": points_delta},
+                    "$set": {"last_points_update": datetime.utcnow()}
+                }
+            )
+            return result.modified_count > 0
+        except Exception:
+            logging.getLogger(__name__).exception("Error adjusting user points")
+            return False
+    
+    def get_user_manual_points(self, username: str) -> int:
+        """Get manually adjusted points for a user"""
+        if self.db is None or not username:
+            return 0
+        try:
+            user = self.db.users.find_one({"username": username})
+            return user.get("manual_points", 0) if user else 0
+        except Exception:
+            logging.getLogger(__name__).exception("Error getting manual points")
+            return 0
+    
+    def delete_report(self, report_id: str) -> bool:
+        """Delete a report (admin only)"""
+        if self.db is None or not report_id:
+            return False
+        try:
+            result = self.db.reports.delete_one({"report_id": report_id})
+            return result.deleted_count > 0
+        except Exception:
+            logging.getLogger(__name__).exception("Error deleting report")
+            return False

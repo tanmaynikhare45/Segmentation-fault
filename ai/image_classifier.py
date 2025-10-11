@@ -94,20 +94,28 @@ class ImageIssueClassifier:
         # 1) Explicit env path
         env_path = os.getenv("BEST_MODEL_PATH")
         if env_path and os.path.exists(env_path):
+            logger.info(f"Using BEST_MODEL_PATH from env: {env_path}")
             return env_path
 
-        root = Path(__file__).resolve().parents[1]  # Hakathon/
+        root = Path(__file__).resolve().parents[1]  # Segmentation-fault/
         candidates = [
             root / "best.pt",
             root / "ai" / "models" / "best.pt",
             root / "models" / "best.pt",
             root / "static" / "models" / "best.pt",
         ]
+        
+        logger.info(f"Searching for best.pt in project root: {root}")
         for p in candidates:
+            logger.debug(f"Checking: {p} - Exists: {p.exists()}")
             if p.exists():
+                logger.info(f"Found best.pt at: {p}")
                 return str(p)
-        # Default location under Hakathon/best.pt
-        return str(root / "best.pt")
+        
+        # Default location under Segmentation-fault/best.pt
+        default_path = str(root / "best.pt")
+        logger.warning(f"best.pt not found in any candidate location. Defaulting to: {default_path}")
+        return default_path
 
     def _initialize_yolo(self):
         """Initialize YOLO from local best.pt. No external services used."""
