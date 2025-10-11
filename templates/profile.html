@@ -32,6 +32,16 @@
                     <div class="profile-info">
                         <h2>{{ user.username }}</h2>
                         <p class="user-role">{{ user.role.title() }} User</p>
+                        {% if stats %}
+                        <div class="gamification-level">
+                            <span class="level-badge" style="background: {{ stats.level_color }};">
+                                <i class="fas fa-trophy"></i> {{ stats.level }}
+                            </span>
+                            <span class="points-badge">
+                                <i class="fas fa-star"></i> {{ stats.points }} Points
+                            </span>
+                        </div>
+                        {% endif %}
                         <div class="profile-stats">
                             <div class="stat-item">
                                 <i class="fas fa-calendar"></i>
@@ -45,6 +55,93 @@
                     </div>
                 </div>
             </section>
+
+            {% if stats %}
+            <!-- Gamification Stats Section -->
+            <section class="gamification-section">
+                <h3><i class="fas fa-gamepad"></i> Your Civic Score</h3>
+                
+                {% if stats.is_blocked %}
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Account Restricted:</strong> {{ stats.registration_message }}
+                </div>
+                {% endif %}
+
+                <div class="stats-grid">
+                    <div class="stat-card points">
+                        <div class="stat-icon">
+                            <i class="fas fa-star"></i>
+                        </div>
+                        <div class="stat-details">
+                            <h4>Total Points</h4>
+                            <p class="stat-value">{{ stats.points }}</p>
+                            <small>{% if stats.points >= 0 %}Keep it up!{% else %}Resolve pending complaints{% endif %}</small>
+                        </div>
+                    </div>
+
+                    <div class="stat-card level">
+                        <div class="stat-icon">
+                            <i class="fas fa-trophy"></i>
+                        </div>
+                        <div class="stat-details">
+                            <h4>Current Level</h4>
+                            <p class="stat-value">{{ stats.level }}</p>
+                            <small>Next: {{ stats.next_level }}</small>
+                        </div>
+                    </div>
+
+                    <div class="stat-card success">
+                        <div class="stat-icon">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-details">
+                            <h4>Success Rate</h4>
+                            <p class="stat-value">{{ stats.success_rate }}%</p>
+                            <small>{{ stats.resolved_complaints }}/{{ stats.total_complaints }} resolved</small>
+                        </div>
+                    </div>
+
+                    <div class="stat-card pending">
+                        <div class="stat-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-details">
+                            <h4>Pending</h4>
+                            <p class="stat-value">{{ stats.pending_complaints }}</p>
+                            <small>Awaiting resolution</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Bar to Next Level -->
+                <div class="level-progress">
+                    <div class="progress-header">
+                        <span>Progress to {{ stats.next_level }}</span>
+                        <span>{{ stats.progress_to_next|round(1) }}%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {{ stats.progress_to_next }}%;"></div>
+                    </div>
+                </div>
+
+                <!-- Badges Section -->
+                {% if badges %}
+                <div class="badges-section">
+                    <h4><i class="fas fa-medal"></i> Earned Badges</h4>
+                    <div class="badges-grid">
+                        {% for badge in badges %}
+                        <div class="badge-card">
+                            <span class="badge-icon">{{ badge.icon }}</span>
+                            <h5>{{ badge.name }}</h5>
+                            <p>{{ badge.description }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </section>
+            {% endif %}
 
             <div class="profile-content">
                 <div class="profile-sidebar">
@@ -92,14 +189,15 @@
 
                     <div id="reports" class="tab-content">
                         <h3><i class="fas fa-list"></i> My Reports</h3>
+                        {% if stats %}
                         <div class="reports-summary">
                             <div class="summary-card">
                                 <div class="summary-icon submitted">
                                     <i class="fas fa-paper-plane"></i>
                                 </div>
                                 <div class="summary-info">
-                                    <h4>Submitted</h4>
-                                    <span class="count">--</span>
+                                    <h4>Total</h4>
+                                    <span class="count">{{ stats.total_complaints }}</span>
                                 </div>
                             </div>
                             <div class="summary-card">
@@ -107,8 +205,8 @@
                                     <i class="fas fa-cogs"></i>
                                 </div>
                                 <div class="summary-info">
-                                    <h4>In Progress</h4>
-                                    <span class="count">--</span>
+                                    <h4>Pending</h4>
+                                    <span class="count">{{ stats.pending_complaints }}</span>
                                 </div>
                             </div>
                             <div class="summary-card">
@@ -117,14 +215,33 @@
                                 </div>
                                 <div class="summary-info">
                                     <h4>Resolved</h4>
-                                    <span class="count">--</span>
+                                    <span class="count">{{ stats.resolved_complaints }}</span>
                                 </div>
                             </div>
                         </div>
+                        {% endif %}
 
                         <div class="recent-reports">
                             <h4>Recent Reports</h4>
-                            <p>No reports found. <a href="{{ url_for('report_page') }}">Create your first report</a></p>
+                            {% if recent_complaints %}
+                                <div class="complaints-list">
+                                    {% for complaint in recent_complaints %}
+                                    <div class="complaint-item">
+                                        <div class="complaint-header">
+                                            <span class="complaint-id">{{ complaint.report_id[:8] }}</span>
+                                            <span class="complaint-status status-{{ complaint.status }}">{{ complaint.status }}</span>
+                                        </div>
+                                        <div class="complaint-body">
+                                            <p class="complaint-type"><i class="fas fa-tag"></i> {{ complaint.issue_type }}</p>
+                                            <p class="complaint-text">{{ complaint.text[:100] }}{% if complaint.text|length > 100 %}...{% endif %}</p>
+                                            <p class="complaint-date"><i class="fas fa-calendar"></i> {{ complaint.created_at[:10] }}</p>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <p>No reports found. <a href="{{ url_for('report_page') }}">Create your first report</a></p>
+                            {% endif %}
                         </div>
                     </div>
 

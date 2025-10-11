@@ -25,6 +25,7 @@ from ai.fake_detection import FakeReportDetector
 from ai.complaint_writer import ComplaintWriter
 from ai.voice_processor import VoiceProcessor
 from ai.news_monitor import NewsMonitor
+from ai.gamification import GamificationSystem
 from storage.db import CivicDB, ReportRecord
 from utils.gps import normalize_location
 
@@ -142,6 +143,7 @@ def create_app() -> Flask:
     fake_detector = FakeReportDetector()
     voice_processor = VoiceProcessor()
     news_monitor = NewsMonitor()
+    gamification = GamificationSystem()
     # Load Groq API key from .env file
     groq_key = " "
     writer = ComplaintWriter(api_key=groq_key)
@@ -168,6 +170,18 @@ def create_app() -> Flask:
     def home():
         if 'user' not in session:
             return redirect(url_for('login_page'))
+        
+        # Check if logged-in user is banned
+        username = session.get('user', {}).get('username')
+        if username:
+            user_data = db.find_user(username)
+            if user_data:
+                user_points = user_data.get('points', 0)
+                if gamification.is_permanently_banned(user_points):
+                    session.pop('user', None)
+                    flash('Your account has been permanently banned. You have been logged out.', 'error')
+                    return redirect(url_for('login_page'))
+        
         return render_template('home.html', user=session.get('user'))
     
     @app.route('/report')
@@ -205,6 +219,22 @@ def create_app() -> Flask:
     def profile_page():
         if 'user' not in session:
             return redirect(url_for('login_page'))
+        
+        username = session.get('user', {}).get('username')
+        user_data = db.find_user(username)
+        
+        if user_data:
+            # Get gamification stats
+            stats = gamification.get_user_stats_summary(user_data)
+            badges = gamification.get_badges(user_data)
+            user_complaints = db.get_user_complaints(username, limit=10)
+            
+            return render_template('profile.html', 
+                                 user=session.get('user'),
+                                 stats=stats,
+                                 badges=badges,
+                                 recent_complaints=user_complaints)
+        
         return render_template('profile.html', user=session.get('user'))
     
     @app.route('/admin')
@@ -250,6 +280,12 @@ def create_app() -> Flask:
         user = db.find_user(username)
         if not user or not db.verify_password(user, password):
             flash('Invalid credentials')
+            return redirect(url_for('login_page'))
+        
+        # Check if user is permanently banned
+        user_points = user.get('points', 0)
+        if gamification.is_permanently_banned(user_points):
+            flash('Your account has been permanently banned due to excessive fake complaints. This account cannot be used anymore.', 'error')
             return redirect(url_for('login_page'))
         
         session['user'] = {
@@ -308,6 +344,22 @@ def create_app() -> Flask:
         if 'user' not in session:
             flash('Please login to submit reports')
             return redirect(url_for('login_page'))
+        
+        username = session.get('user', {}).get('username')
+        user_data = db.find_user(username)
+        
+        if not user_data:
+            flash('User not found')
+            return redirect(url_for('login_page'))
+        
+        # Check if user can register complaint (gamification check)
+        user_points = user_data.get('points', 0)
+        pending_count = user_data.get('pending_complaints', 0)
+        can_register, message = gamification.can_register_complaint(user_points, pending_count)
+        
+        if not can_register:
+            flash(message, 'error')
+            return redirect(url_for('report_page'))
         
         text = request.form.get('description')
         latitude = request.form.get('latitude')
@@ -397,11 +449,28 @@ def create_app() -> Flask:
             status="submitted",
             fake=is_fake,
             fake_score=fake_score,
+            user_id=username,
         )
         
         logging.getLogger(__name__).info(f"Generated report ID: {report_id}")
         save_success = db.save_report(record)
         logging.getLogger(__name__).info(f"Report save result: {save_success}")
+        
+        # Update user statistics
+        if save_success:
+            stat_updates = {
+                "total_complaints": 1,
+                "pending_complaints": 1
+            }
+            
+            # If marked as fake, update fake count and apply penalty
+            if is_fake:
+                stat_updates["fake_complaints"] = 1
+                penalty = gamification.calculate_points_for_fake_detection()
+                db.update_user_points(username, penalty)
+                logging.getLogger(__name__).info(f"Applied fake penalty: {penalty} points to {username}")
+            
+            db.update_user_stats(username, stat_updates)
         
         if is_fake:
             flash(f'Report submitted but flagged for review. Complaint ID: {report_id}')
@@ -443,9 +512,17 @@ def create_app() -> Flask:
             flash('Report ID and status are required')
             return redirect(url_for('admin_page'))
         
+        # Get the report to find the user
+        report = db.get_report(report_id)
+        old_status = report.status if report else None
+        
         success = db.update_status(report_id, new_status)
         if success:
             flash('Status updated successfully')
+            
+            # Update user points and stats based on status change
+            if report and report.user_id:
+                _update_user_gamification(report.user_id, old_status, new_status, report.fake)
         else:
             flash('Failed to update status')
         
@@ -612,13 +689,58 @@ def create_app() -> Flask:
         if not report_id or not new_status:
             return jsonify({"error": "missing_data"}), 400
         
+        # Get the report to find the user
+        report = db.get_report(report_id)
+        old_status = report.status if report else None
+        
         success = db.update_status(report_id, new_status)
         
         if success:
             logging.getLogger(__name__).info(f"Status updated: {report_id} -> {new_status}")
+            
+            # Update user points and stats based on status change
+            if report and report.user_id:
+                _update_user_gamification(report.user_id, old_status, new_status, report.fake)
+            
             return jsonify({"success": True})
         else:
             return jsonify({"error": "update_failed"}), 500
+    
+    def _update_user_gamification(username: str, old_status: str, new_status: str, is_fake: bool):
+        """Helper function to update user gamification stats when status changes"""
+        try:
+            stat_updates = {}
+            points_delta = 0
+            
+            # When complaint moves from pending to resolved
+            if old_status in ['submitted', 'in_progress'] and new_status == 'resolved':
+                stat_updates['resolved_complaints'] = 1
+                stat_updates['pending_complaints'] = -1
+                
+                # Award points for resolved complaint (only if not fake)
+                if not is_fake:
+                    points_delta = gamification.calculate_points_for_resolved(is_fake)
+                    logging.getLogger(__name__).info(f"Awarding {points_delta} points to {username} for resolved complaint")
+            
+            # When complaint moves to in_progress (no point change, just tracking)
+            elif old_status == 'submitted' and new_status == 'in_progress':
+                # No stat changes needed, still pending
+                pass
+            
+            # When complaint is rejected/closed without resolution
+            elif old_status in ['submitted', 'in_progress'] and new_status in ['rejected', 'closed']:
+                stat_updates['pending_complaints'] = -1
+                # No points awarded for rejected complaints
+            
+            # Apply updates
+            if stat_updates:
+                db.update_user_stats(username, stat_updates)
+            
+            if points_delta != 0:
+                db.update_user_points(username, points_delta)
+                
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Error updating gamification for {username}: {e}")
     
     # Chatbot route
     @app.route('/chatbot', methods=['POST'])

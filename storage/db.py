@@ -33,6 +33,7 @@ class ReportRecord:
     status: str
     fake: bool
     fake_score: float
+    user_id: Optional[str] = None
 
 class CivicDB:
     def __init__(self):
@@ -97,7 +98,12 @@ class CivicDB:
                 "password": pwd_context.hash(password),
                 "name": name,
                 "role": role,
-                "created_at": datetime.utcnow()
+                "created_at": datetime.utcnow(),
+                "points": 0,
+                "total_complaints": 0,
+                "resolved_complaints": 0,
+                "fake_complaints": 0,
+                "pending_complaints": 0
             }
             result = self.db.users.insert_one(user)
             return bool(result.inserted_id)
@@ -122,7 +128,8 @@ class CivicDB:
                 "complaint_text": record.complaint_text,
                 "status": record.status,
                 "fake": record.fake,
-                "fake_score": record.fake_score
+                "fake_score": record.fake_score,
+                "user_id": record.user_id
             }
             logging.getLogger(__name__).info(f"Saving report with ID: {record.report_id}")
             result = self.db.reports.insert_one(doc)
@@ -188,3 +195,57 @@ class CivicDB:
         if self.db is None:
             return []
         return list(self.db.users.find({"role": "authority"}))
+    
+    def get_user_points(self, username: str) -> int:
+        """Get user's current points"""
+        if self.db is None:
+            return 0
+        try:
+            user = self.find_user(username)
+            return user.get('points', 0) if user else 0
+        except Exception:
+            logging.getLogger(__name__).exception("Error getting user points")
+            return 0
+    
+    def update_user_points(self, username: str, points_delta: int) -> bool:
+        """Update user points by adding delta (can be positive or negative)"""
+        if self.db is None:
+            return False
+        try:
+            result = self.db.users.update_one(
+                {"username": username},
+                {"$inc": {"points": points_delta}}
+            )
+            return result.modified_count > 0
+        except Exception:
+            logging.getLogger(__name__).exception("Error updating user points")
+            return False
+    
+    def update_user_stats(self, username: str, stat_updates: dict) -> bool:
+        """Update user statistics (complaints counts, etc.)"""
+        if self.db is None:
+            return False
+        try:
+            result = self.db.users.update_one(
+                {"username": username},
+                {"$inc": stat_updates}
+            )
+            return result.modified_count > 0
+        except Exception:
+            logging.getLogger(__name__).exception("Error updating user stats")
+            return False
+    
+    def get_user_complaints(self, username: str, limit: int = 50) -> List[ReportRecord]:
+        """Get all complaints filed by a specific user"""
+        if self.db is None:
+            return []
+        try:
+            docs = self.db.reports.find({"user_id": username}).sort("created_at", -1).limit(limit)
+            cleaned = []
+            for doc in docs:
+                doc.pop("_id", None)
+                cleaned.append(ReportRecord(**doc))
+            return cleaned
+        except Exception:
+            logging.getLogger(__name__).exception("Error getting user complaints")
+            return []
