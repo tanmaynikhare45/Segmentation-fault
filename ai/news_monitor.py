@@ -28,87 +28,147 @@ class NewsMonitor:
         logger.info("Enhanced NewsMonitor initialized")
     
     def _get_fallback_data(self, city: str) -> Dict[str, List[Dict]]:
-        """Generate fallback civic issues data with locations"""
-        news_data = [
+        """Generate dynamic fallback civic issues data with rotating content"""
+        import random
+        
+        # Dynamic news templates
+        news_templates = [
             {
                 'title': f'{city} Road Maintenance Issues Reported',
                 'description': 'Multiple potholes and road damage reported by citizens in various areas near City Center',
-                'url': 'https://example.com/news1',
-                'publishedAt': datetime.now().isoformat(),
                 'location': 'City Center, Gwalior',
-                'latitude': 26.2183,
-                'longitude': 78.1828
+                'latitude': 26.2183, 'longitude': 78.1828
             },
             {
                 'title': f'{city} Garbage Collection Delays',
                 'description': 'Waste management issues causing concern among residents in Lashkar area',
-                'url': 'https://example.com/news2', 
-                'publishedAt': (datetime.now() - timedelta(hours=2)).isoformat(),
                 'location': 'Lashkar, Gwalior',
-                'latitude': 26.2124,
-                'longitude': 78.1772
+                'latitude': 26.2124, 'longitude': 78.1772
             },
             {
                 'title': f'{city} Street Light Maintenance Required',
                 'description': 'Several areas reporting non-functional street lighting in Maharaj Bada',
-                'url': 'https://example.com/news3',
-                'publishedAt': (datetime.now() - timedelta(hours=4)).isoformat(),
                 'location': 'Maharaj Bada, Gwalior',
-                'latitude': 26.2235,
-                'longitude': 78.1761
+                'latitude': 26.2235, 'longitude': 78.1761
+            },
+            {
+                'title': f'{city} Water Logging Issues After Rain',
+                'description': 'Heavy waterlogging reported in low-lying areas of Morar after recent rainfall',
+                'location': 'Morar, Gwalior',
+                'latitude': 26.2456, 'longitude': 78.2123
+            },
+            {
+                'title': f'{city} Traffic Congestion at Major Junction',
+                'description': 'Severe traffic jams reported at Phool Bagh intersection during peak hours',
+                'location': 'Phool Bagh, Gwalior',
+                'latitude': 26.2089, 'longitude': 78.1567
+            },
+            {
+                'title': f'{city} Illegal Encroachment on Footpath',
+                'description': 'Vendors occupying pedestrian walkways in Sarafa Bazaar area',
+                'location': 'Sarafa Bazaar, Gwalior',
+                'latitude': 26.2198, 'longitude': 78.1834
             }
         ]
         
-        twitter_data = [
+        # Dynamic Twitter templates
+        twitter_templates = [
             {
-                'id': '1234567890',
-                'text': f'Pothole on main road near Railway Station in {city} needs immediate attention #civicissue',
-                'created_at': datetime.now().isoformat(),
-                'public_metrics': {'retweet_count': 5, 'like_count': 12},
+                'text': f'Pothole on main road near Railway Station in {city} needs immediate attention #civicissue #FixOurRoads',
                 'location': 'Railway Station, Gwalior',
-                'latitude': 26.2146,
-                'longitude': 78.1932
+                'latitude': 26.2146, 'longitude': 78.1932
             },
             {
-                'id': '1234567891', 
-                'text': f'Garbage not collected for 3 days in Thatipur {city} area #waste #municipal',
-                'created_at': (datetime.now() - timedelta(hours=1)).isoformat(),
-                'public_metrics': {'retweet_count': 8, 'like_count': 15},
+                'text': f'Garbage not collected for 3 days in Thatipur {city} area #waste #municipal #CleanCity',
                 'location': 'Thatipur, Gwalior',
-                'latitude': 26.1956,
-                'longitude': 78.1691
+                'latitude': 26.1956, 'longitude': 78.1691
+            },
+            {
+                'text': f'Street lights not working in Hazira area {city} for past week #safety #streetlights',
+                'location': 'Hazira, Gwalior',
+                'latitude': 26.2301, 'longitude': 78.1945
+            },
+            {
+                'text': f'Water stagnation near City Centre {city} causing mosquito breeding #health #drainage',
+                'location': 'City Centre, Gwalior',
+                'latitude': 26.2183, 'longitude': 78.1828
+            },
+            {
+                'text': f'Illegal parking blocking main road in Kampoo {city} #traffic #parking #civicissue',
+                'location': 'Kampoo, Gwalior',
+                'latitude': 26.2067, 'longitude': 78.1723
             }
         ]
+        
+        # Select random items for variety
+        selected_news = random.sample(news_templates, min(4, len(news_templates)))
+        selected_tweets = random.sample(twitter_templates, min(3, len(twitter_templates)))
+        
+        # Generate news data with timestamps
+        news_data = []
+        for i, template in enumerate(selected_news):
+            news_data.append({
+                'title': template['title'],
+                'description': template['description'],
+                'url': f'https://example.com/news{i+1}',
+                'publishedAt': (datetime.now() - timedelta(hours=i*2)).isoformat(),
+                'location': template['location'],
+                'latitude': template['latitude'],
+                'longitude': template['longitude']
+            })
+        
+        # Generate Twitter data with timestamps and metrics
+        twitter_data = []
+        for i, template in enumerate(selected_tweets):
+            twitter_data.append({
+                'id': f'123456789{i}',
+                'text': template['text'],
+                'created_at': (datetime.now() - timedelta(minutes=i*30)).isoformat(),
+                'public_metrics': {
+                    'retweet_count': random.randint(2, 15),
+                    'like_count': random.randint(5, 25)
+                },
+                'location': template['location'],
+                'latitude': template['latitude'],
+                'longitude': template['longitude']
+            })
         
         return {"news": news_data, "twitter": twitter_data, "reddit": []}
     
     def generate_complaints_from_news(self) -> List[Dict]:
-        """Generate complaints with fallback data"""
+        """Generate complaints with dynamic fallback data"""
         try:
-            # Use fallback data for demo
+            # Use dynamic fallback data
             city = "Gwalior"
             all_sources = self._get_fallback_data(city)
             issues = self.extract_civic_issues(all_sources)
             
             complaints = []
             for issue in issues:
+                # Create more natural descriptions
+                if issue['source'] == 'news':
+                    description = f"News Report: {issue['description'][:150]}..."
+                else:
+                    description = f"Social Media: {issue['description'][:120]}..."
+                
                 complaint = {
+                    'title': issue['title'][:80],  # Shorter titles
                     'issue_type': issue['issue_type'],
-                    'description': f"[{issue['source'].upper()}] {issue['title']} - {issue['description'][:200]}",
+                    'description': description,
                     'source_url': issue['url'],
                     'auto_generated': True,
                     'source_type': issue['source'],
                     'published_date': issue['published_at'],
                     'relevance_score': issue['score'],
-                    'keywords': issue['keywords'],
+                    'keywords': issue['keywords'][:3],  # Limit keywords
                     'location': issue.get('location', ''),
                     'latitude': issue.get('latitude'),
                     'longitude': issue.get('longitude')
                 }
                 complaints.append(complaint)
             
-            logger.info(f"Generated {len(complaints)} complaints from sources")
-            return complaints
+            logger.info(f"Generated {len(complaints)} dynamic complaints from sources")
+            return complaints[:5]  # Limit to top 5 most relevant
             
         except Exception as e:
             logger.error(f"Failed to generate complaints: {e}")

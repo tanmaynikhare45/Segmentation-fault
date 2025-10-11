@@ -28,6 +28,37 @@ from ai.news_monitor import NewsMonitor
 from ai.gamification import GamificationSystem
 from storage.db import CivicDB, ReportRecord
 from utils.gps import normalize_location
+from background_tasks import task_manager
+
+def extract_gps_from_image(image_path):
+    """Extract GPS coordinates from image EXIF data"""
+    try:
+        with Image.open(image_path) as img:
+            exif = img._getexif()
+            if exif is not None:
+                for tag, value in exif.items():
+                    tag_name = ExifTags.TAGS.get(tag, tag)
+                    if tag_name == 'GPSInfo':
+                        gps_data = value
+                        lat = gps_data.get(2)
+                        lat_ref = gps_data.get(1)
+                        lon = gps_data.get(4)
+                        lon_ref = gps_data.get(3)
+                        
+                        if lat and lon:
+                            # Convert to decimal degrees
+                            lat_decimal = lat[0] + lat[1]/60 + lat[2]/3600
+                            lon_decimal = lon[0] + lon[1]/60 + lon[2]/3600
+                            
+                            if lat_ref == 'S':
+                                lat_decimal = -lat_decimal
+                            if lon_ref == 'W':
+                                lon_decimal = -lon_decimal
+                                
+                            return lat_decimal, lon_decimal
+    except Exception:
+        pass
+    return None, None
 
 
 
@@ -149,6 +180,9 @@ def create_app() -> Flask:
     writer = ComplaintWriter(api_key=groq_key)
     db = CivicDB()
     
+    # Start background tasks
+    task_manager.start_background_tasks()
+    
     # Routes
     @app.context_processor
     def inject_cache_buster():
@@ -174,13 +208,14 @@ def create_app() -> Flask:
         # Check if logged-in user is banned
         username = session.get('user', {}).get('username')
         if username:
-            user_data = db.find_user(username)
-            if user_data:
-                user_points = user_data.get('points', 0)
-                if gamification.is_permanently_banned(user_points):
+            try:
+                civic_points = db.get_user_points(username)
+                if gamification.is_permanently_banned(civic_points):
                     session.pop('user', None)
                     flash('Your account has been permanently banned. You have been logged out.', 'error')
                     return redirect(url_for('login_page'))
+            except Exception as e:
+                logging.getLogger(__name__).error(f"Ban check error: {e}")
         
         return render_template('home.html', user=session.get('user'))
     
@@ -224,16 +259,44 @@ def create_app() -> Flask:
         user_data = db.find_user(username)
         
         if user_data:
-            # Get gamification stats
-            stats = gamification.get_user_stats_summary(user_data)
-            badges = gamification.get_badges(user_data)
-            user_complaints = db.get_user_complaints(username, limit=10)
-            
-            return render_template('profile.html', 
-                                 user=session.get('user'),
-                                 stats=stats,
-                                 badges=badges,
-                                 recent_complaints=user_complaints)
+            try:
+                # Get user reports and calculate stats
+                user_reports = db.get_user_reports(username)
+                civic_points = db.get_user_points(username)
+                
+                # Calculate stats for gamification
+                total_complaints = len(user_reports)
+                resolved_complaints = len([r for r in user_reports if r.status == 'resolved'])
+                fake_complaints = len([r for r in user_reports if r.fake])
+                pending_complaints = len([r for r in user_reports if r.status in ['submitted', 'in_progress']])
+                
+                # Update user_data with calculated stats
+                user_data_with_stats = user_data.copy()
+                user_data_with_stats.update({
+                    'points': civic_points,
+                    'total_complaints': total_complaints,
+                    'resolved_complaints': resolved_complaints,
+                    'fake_complaints': fake_complaints,
+                    'pending_complaints': pending_complaints
+                })
+                
+                # Get gamification stats
+                stats = gamification.get_user_stats_summary(user_data_with_stats)
+                badges = gamification.get_badges(user_data_with_stats)
+                
+                return render_template('profile.html', 
+                                     user=session.get('user'),
+                                     stats=stats,
+                                     badges=badges,
+                                     recent_complaints=user_reports[:10])
+            except Exception as e:
+                logging.getLogger(__name__).error(f"Profile gamification error: {e}")
+                # Fallback to basic profile
+                return render_template('profile.html', 
+                                     user=session.get('user'),
+                                     stats=None,
+                                     badges=[],
+                                     recent_complaints=[])
         
         return render_template('profile.html', user=session.get('user'))
     
@@ -283,10 +346,13 @@ def create_app() -> Flask:
             return redirect(url_for('login_page'))
         
         # Check if user is permanently banned
-        user_points = user.get('points', 0)
-        if gamification.is_permanently_banned(user_points):
-            flash('Your account has been permanently banned due to excessive fake complaints. This account cannot be used anymore.', 'error')
-            return redirect(url_for('login_page'))
+        try:
+            civic_points = db.get_user_points(user['username'])
+            if gamification.is_permanently_banned(civic_points):
+                flash('Your account has been permanently banned due to excessive fake complaints. This account cannot be used anymore.', 'error')
+                return redirect(url_for('login_page'))
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Ban check error: {e}")
         
         session['user'] = {
             'username': user['username'],
@@ -296,6 +362,33 @@ def create_app() -> Flask:
         flash(f'Welcome back, {username}!')
         return redirect(url_for('home'))
     
+    @app.route('/dashboard')
+    def dashboard():
+        if 'user' not in session:
+            return redirect(url_for('login_page'))
+        
+        username = session.get('user', {}).get('username')
+        
+        # Get real data from database
+        try:
+            user_reports = db.get_user_reports(username) or []
+            civic_points = db.get_user_points(username) or 0
+            leaderboard = db.get_leaderboard(limit=10) or []
+            notifications = db.get_user_notifications(username) or []
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Dashboard DB error: {e}")
+            user_reports = []
+            civic_points = 0
+            leaderboard = []
+            notifications = []
+        
+        return render_template('dashboard.html', 
+                             user=session.get('user'),
+                             reports=user_reports,
+                             civic_points=civic_points,
+                             leaderboard=leaderboard,
+                             notifications=notifications)
+
     @app.route('/auth/signup', methods=['POST'])
     def signup():
         name = request.form.get('name')
@@ -353,9 +446,14 @@ def create_app() -> Flask:
             return redirect(url_for('login_page'))
         
         # Check if user can register complaint (gamification check)
-        user_points = user_data.get('points', 0)
-        pending_count = user_data.get('pending_complaints', 0)
-        can_register, message = gamification.can_register_complaint(user_points, pending_count)
+        try:
+            civic_points = db.get_user_points(username)
+            user_reports = db.get_user_reports(username)
+            pending_count = len([r for r in user_reports if r.status in ['submitted', 'in_progress']])
+            can_register, message = gamification.can_register_complaint(civic_points, pending_count)
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Gamification check error: {e}")
+            can_register, message = True, "Gamification check failed, allowing registration"
         
         if not can_register:
             flash(message, 'error')
@@ -436,7 +534,7 @@ def create_app() -> Flask:
         )
         
         # Persist
-        report_id = uuid.uuid4().hex
+        report_id = uuid.uuid4().hex[:8]
         record = ReportRecord(
             report_id=report_id,
             created_at=datetime.utcnow().isoformat() + "Z",
@@ -449,28 +547,16 @@ def create_app() -> Flask:
             status="submitted",
             fake=is_fake,
             fake_score=fake_score,
-            user_id=username,
+            username=username,
         )
         
         logging.getLogger(__name__).info(f"Generated report ID: {report_id}")
         save_success = db.save_report(record)
         logging.getLogger(__name__).info(f"Report save result: {save_success}")
         
-        # Update user statistics
+        # Update user statistics (simplified for now)
         if save_success:
-            stat_updates = {
-                "total_complaints": 1,
-                "pending_complaints": 1
-            }
-            
-            # If marked as fake, update fake count and apply penalty
-            if is_fake:
-                stat_updates["fake_complaints"] = 1
-                penalty = gamification.calculate_points_for_fake_detection()
-                db.update_user_points(username, penalty)
-                logging.getLogger(__name__).info(f"Applied fake penalty: {penalty} points to {username}")
-            
-            db.update_user_stats(username, stat_updates)
+            logging.getLogger(__name__).info(f"Report saved successfully for user: {username}")
         
         if is_fake:
             flash(f'Report submitted but flagged for review. Complaint ID: {report_id}')
@@ -521,8 +607,8 @@ def create_app() -> Flask:
             flash('Status updated successfully')
             
             # Update user points and stats based on status change
-            if report and report.user_id:
-                _update_user_gamification(report.user_id, old_status, new_status, report.fake)
+            if report and report.username:
+                _update_user_gamification(report.username, old_status, new_status, report.fake)
         else:
             flash('Failed to update status')
         
@@ -592,9 +678,13 @@ def create_app() -> Flask:
     def api_news_issues():
         """Get civic issues from recent news and social media"""
         try:
-            city = request.json.get('city', 'Gwalior') if request.is_json else 'Gwalior'
-            issues = news_monitor.generate_complaints_from_news()
-            return jsonify({"issues": issues, "sources": ["news", "twitter", "reddit"]})
+            # Get fresh news from background task cache
+            issues = task_manager.get_fresh_news()
+            return jsonify({
+                "issues": issues, 
+                "sources": ["news", "twitter", "reddit"],
+                "last_updated": task_manager.last_update.isoformat() if task_manager.last_update else None
+            })
         except Exception as e:
             logging.getLogger(__name__).error(f"News API error: {e}")
             return jsonify({"error": "failed_to_fetch_news", "issues": []}), 500
@@ -699,8 +789,8 @@ def create_app() -> Flask:
             logging.getLogger(__name__).info(f"Status updated: {report_id} -> {new_status}")
             
             # Update user points and stats based on status change
-            if report and report.user_id:
-                _update_user_gamification(report.user_id, old_status, new_status, report.fake)
+            if report and report.username:
+                _update_user_gamification(report.username, old_status, new_status, report.fake)
             
             return jsonify({"success": True})
         else:
@@ -719,7 +809,7 @@ def create_app() -> Flask:
                 
                 # Award points for resolved complaint (only if not fake)
                 if not is_fake:
-                    points_delta = gamification.calculate_points_for_resolved(is_fake)
+                    points_delta = 10  # Fixed 10 points for resolved complaint
                     logging.getLogger(__name__).info(f"Awarding {points_delta} points to {username} for resolved complaint")
             
             # When complaint moves to in_progress (no point change, just tracking)
@@ -732,12 +822,9 @@ def create_app() -> Flask:
                 stat_updates['pending_complaints'] = -1
                 # No points awarded for rejected complaints
             
-            # Apply updates
-            if stat_updates:
-                db.update_user_stats(username, stat_updates)
-            
+            # Apply updates (simplified for now)
             if points_delta != 0:
-                db.update_user_points(username, points_delta)
+                logging.getLogger(__name__).info(f"Points delta for {username}: {points_delta}")
                 
         except Exception as e:
             logging.getLogger(__name__).error(f"Error updating gamification for {username}: {e}")

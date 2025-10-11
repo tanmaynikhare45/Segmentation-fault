@@ -13,10 +13,10 @@
             <h1><i class="fas fa-eye"></i> <a href="{{ url_for('home') }}">Civic Eye</a></h1>
             <nav class="main-nav">
                 <ul>
-                    <li><a href="{{ url_for('home') }}"><i class="fas fa-home"></i> Dashboard</a></li>
+                    <li><a href="{{ url_for('home') }}"><i class="fas fa-home"></i> Home</a></li>
                     <li><a href="{{ url_for('report_page') }}"><i class="fas fa-plus-circle"></i> Report Issue</a></li>
+                    <li><a href="{{ url_for('dashboard') }}"><i class="fas fa-tachometer-alt"></i> My Dashboard</a></li>
                     <li><a href="{{ url_for('track_page') }}" class="active"><i class="fas fa-search"></i> Track</a></li>
-                    <li><a href="{{ url_for('solutions_page') }}"><i class="fas fa-lightbulb"></i> Solutions</a></li>
                 </ul>
             </nav>
         </div>
@@ -51,7 +51,7 @@
                 
                 <form action="{{ url_for('check_status') }}" method="post" class="track-form">
                     <div class="search-group">
-                        <input type="text" name="complaint_id" placeholder="Enter Complaint ID (32 characters)" required maxlength="32" style="font-family: monospace; text-transform: lowercase;">
+                        <input type="text" name="complaint_id" placeholder="Enter Complaint ID (8 characters)" required maxlength="8" style="font-family: monospace; text-transform: lowercase;">
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-search"></i> Check Status
                         </button>
