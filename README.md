@@ -1,5 +1,6 @@
 ## Team Name
 Segmentation Fault
+IIIT Gwalior Hakathon
 
 ## Team Members
 - Tanmay Nikhare
