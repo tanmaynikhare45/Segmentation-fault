@@ -3,20 +3,9 @@ from app import app
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
-    
-    #before running the database cheaak the ip address is active or not active ip address then run
-
-    
     app.run(host="0.0.0.0", port=port, debug=True)
-    
 
-# In Python console or add to signup
-from storage.db import CivicDB
-db = CivicDB()
-db.create_user("authority1", "auth@civic.com", "password", "Authority User", "authority")
-
-
-
-
-
-
+# Run this manually once in a Python console to seed an authority/admin account:
+# from storage.db import CivicDB
+# db = CivicDB()
+# db.create_user("authority1", "auth@civic.com", "password", "Authority User", "authority")
