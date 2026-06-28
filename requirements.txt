@@ -14,4 +14,8 @@ scikit-learn>=1.7.1
 email-validator>=2.3.0
 openai>=1.0.0
 groq>=0.4.0
+requests
+aiohttp
+SpeechRecognition
+certifi
 pydub
