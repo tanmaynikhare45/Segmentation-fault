@@ -19,3 +19,5 @@ aiohttp
 SpeechRecognition
 certifi
 pydub
+ultralytics
+opencv-python-headless
